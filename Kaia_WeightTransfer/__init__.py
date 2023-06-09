@@ -40,9 +40,6 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         self.undoable = True
         self.source_shape = None
         self.source_weight = None
-        self.current_shape = None
-        self.current_tool = None
-        self.current_paint = None
         
     def create_widgets(self):
         self.undoable_cb = QtWidgets.QCheckBox("Undoable")

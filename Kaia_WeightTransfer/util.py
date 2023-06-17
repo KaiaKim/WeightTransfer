@@ -1,6 +1,10 @@
 import maya.api.OpenMaya as om
 import maya.api.OpenMayaAnim as oma
+import maya.OpenMaya as om1
+import maya.OpenMayaAnim as oma1
 import maya.cmds as cmds
+import maya.mel as mel
+
 
 ### tool that transfer current influence weight to another (skinCluster or Deformer) influence
 class WeightTransferCompute():
@@ -34,13 +38,42 @@ class WeightTransferCompute():
         current_tool = cmds.currentCtx()
         
         if current_tool == "artAttrSkinContext": #Paint Skin Weights Tool
-            current_paint = cmds.artAttrSkinPaintCtx(cmds.currentCtx(), q=True, inf=True) # We need to get a 'context' of influence index
+            # maya 2024 supports multiple skinclst
+            v = cmds.about(version=True) # str <- stupid
+            v = int(v)
+            if v < 2024:
+                skinclst = cmds.ls(cmds.listHistory(dag.fullPathName()), type="skinCluster")
+            elif v <= 2024:
+                skinclst = cmds.textScrollList('skinClusterPaintList', q=True, si=True)[0] 
+            current_deformer = skinclst
+            
+            # We need to get a 'context' of influence index
+            current_paint = cmds.artAttrSkinPaintCtx(current_tool, q=True, inf=True) 
             if current_paint == '':
                 om.MGlobal.displayError("An influence must be selected inside Paint Skin Weights Tool.")
                 return
 
         elif current_tool == 'artAttrBlendShapeContext':
-            pass
+            selected_attr = cmds.artAttrCtx(current_tool, q=True, asl=True)
+            # print('asl:', selected_attr)
+            # asl: blendShape.blendShape1.paintTargetWeights
+            
+            bsNode = selected_attr.split('.')[1]
+            current_deformer = bsNode
+            
+            idx1, idx2 = mel.eval('artBlendShapeTargetIndex;') 
+            print('idx1:', idx1) # 1 base weight, 0 target weight
+            print('idx2:', idx2) # target index
+            
+            if idx1 == 1:
+                current_paint = bsNode
+                
+            elif idx1 == 0:
+                current_paint = mel.eval('blendShapeTargetNameFromIndex "{0}" {1};'.format(bsNode, idx2))
+            
+            print('current_paint:', current_paint)
+            
+                
         elif current_tool == 'artAttrNClothContext':
             pass
         elif current_tool == 'artAttrContext':
@@ -49,11 +82,11 @@ class WeightTransferCompute():
             om.MGlobal.displayError("Current tool must be either Paint Skin Weights Tool, Paint Blend Shape Weights Tool, Paint nCloth Attributes Tool, or Paint Attributes Tool.")
             return
         
-        return current_shape, current_tool, current_paint
+        return current_shape, current_deformer, current_tool, current_paint
         
 
-    def querySkinWeights(self, shape_dag, inf):
-        skinclst = cmds.textScrollList('skinClusterPaintList', q=True, si=True)[0]
+    def querySkinWeights(self, shape_dag, skinclst, inf):
+
         skinclst_obj = om.MSelectionList().add(skinclst).getDependNode(0) # Mobject
         skinclst_fn = oma.MFnSkinCluster(skinclst_obj)
         
@@ -69,8 +102,27 @@ class WeightTransferCompute():
         
         om.MGlobal.displayInfo("Copy skin weights success!")
         
-    def queryBlendWeights(self):
-        pass
+    def queryBlendWeights(self, shape_dag, blendShape, inf):
+        # MFnBlendShapeDeformer class is only available in Python API 1.0
+        
+        sel = om1.MSelectionList()
+        sel.add(blendShape)
+        blendShape_obj = om1.MObject()
+        sel.getDependNode(0, blendShape_obj)
+        blendShape_fn = oma1.MFnBlendShapeDeformer(blendShape_obj)
+        
+        print('blendShape:', blendShape)
+        print('blendShape_obj:', blendShape_obj, type(blendShape_obj))
+        print('blendShape_fn:', blendShape_fn, type(blendShape_fn))
+        
+        inf_dag = None
+        inf_idx = None
+        
+        weights = blendShape_fn.weight(0)
+        
+        print('weights:', weights, type(weights))
+        
+        
     
         
     def queryNClothWeights(self):
@@ -81,10 +133,9 @@ class WeightTransferCompute():
         pass
     
     
-    def editSkinWeights(self, shape_dag, inf):
+    def editSkinWeights(self, shape_dag, skinclst, inf):
         shape_fullPath = shape_dag.fullPathName() # str
         
-        skinclst = cmds.textScrollList('skinClusterPaintList', q=True, si=True)[0]
         skinclst_obj = om.MSelectionList().add(skinclst).getDependNode(0) # Mobject
         skinclst_fn = oma.MFnSkinCluster(skinclst_obj)
         

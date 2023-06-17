@@ -40,6 +40,9 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         self.undoable = True
         self.source_shape = None
         self.source_weight = None
+        self.current_shape = None
+        self.current_tool = None
+        self.current_paint = None
         
     def create_widgets(self):
         self.undoable_cb = QtWidgets.QCheckBox("Undoable")
@@ -73,14 +76,14 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
     
     def copy_clicked(self):
         try:
-            shape, tool, paint = self.initialCheck()
+            shape, deformer, tool, paint = self.initialCheck()
         except:
             return
         
         if tool == 'artAttrSkinContext':
-            self.querySkinWeights(shape, paint)
+            self.querySkinWeights(shape, deformer, paint)
         elif tool == 'artAttrBlendShapeContext':
-            self.queryBlendWeights()
+            self.queryBlendWeights(shape, deformer, paint)
         elif tool == 'artAttrNClothContext':
             self.queryNClothWeights()
         elif tool == 'artAttrContext':
@@ -92,7 +95,7 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         
     def paste_clicked(self):
         try:
-            shape, tool, paint = self.initialCheck()
+            shape, deformer, tool, paint = self.initialCheck()
         except:
             return
         
@@ -100,7 +103,7 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         cmds.undoInfo(openChunk=True)
         
         if tool == 'artAttrSkinContext':
-            self.editSkinWeights(shape, paint)
+            self.editSkinWeights(shape, deformer, paint)
         elif tool == 'artAttrBlendShapeContext':
             self.editBlendWeights()
         elif tool == 'artAttrNClothContext':

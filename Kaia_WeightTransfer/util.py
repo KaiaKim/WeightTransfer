@@ -34,6 +34,9 @@ class WeightTransferCompute():
         
         # What tool are we using?
         current_tool = cmds.currentCtx()
+        print('current tool:', current_tool)
+        # current tool: artAttrCtx1
+        # current tool: artAttrBlendShapeContext
         
         if current_tool == "artAttrSkinContext": #Paint Skin Weights Tool
             # maya 2024 supports multiple skinclst
@@ -102,13 +105,13 @@ class WeightTransferCompute():
         blendShape_fn = om.MFnDependencyNode(blendShape_obj)
         
         # Get the weight plug...
-        inputTarget0_plug = blendShape_fn.findPlug('inputTarget', True).elementByPhysicalIndex(0)
+        inputTarget_plug = blendShape_fn.findPlug('inputTarget', True).elementByPhysicalIndex(0)
         # result: blendshape.inputTarget[0]
         if target == 1:
-            weights_plug = inputTarget0_plug.child(1)
+            paint_plug = inputTarget_plug.child(1)
             # result: blendshape.inputTarget[0].baseWeights
         elif target == 0:
-            weights_plug = inputTarget0_plug.child(3)
+            paint_plug = inputTarget_plug.child(3)
             # result: blendshape.inputTarget[0].paintTargetWeights
         
         # Create empty array...
@@ -117,8 +120,8 @@ class WeightTransferCompute():
         # Iterate over every vertices...
         itVerts = om.MItMeshVertex(shape_dag)
         while not itVerts.isDone():
-            element_plug = weights_plug.elementByLogicalIndex(itVerts.index()) # MPlug
-            weight = element_plug.asFloat() # float
+            child_plug = paint_plug.elementByLogicalIndex(itVerts.index()) # MPlug
+            weight = child_plug.asFloat() # float
             self.source_weights.append(weight)
             itVerts.next()
             
@@ -193,42 +196,49 @@ class WeightTransferCompute():
         
         
     def editBlendWeights(self, shape_dag, blendShape, target):
-        # There is no dedicated function set for accessing blendshape deformer weights (not blendshape weights!)
-        # Therefore we're accessing those values using Mplug object.
-        
         # Get blendshape node function set...
         blendShape_obj = om.MSelectionList().add(blendShape).getDependNode(0) # Mobject
         blendShape_fn = om.MFnDependencyNode(blendShape_obj)
         
         # Get the weight plug...
-        inputTarget0_plug = blendShape_fn.findPlug('inputTarget', True).elementByPhysicalIndex(0)
+        inputTarget_plug = blendShape_fn.findPlug('inputTarget', True).elementByPhysicalIndex(0)
         # result: blendshape.inputTarget[0]
         if target == 1:
-            weights_plug = inputTarget0_plug.child(1)
+            paint_plug = inputTarget_plug.child(1) # MPlug
             # result: blendshape.inputTarget[0].baseWeights
+            
         elif target == 0:
-            weights_plug = inputTarget0_plug.child(3)
+            paint_plug = inputTarget_plug.child(3)
             # result: blendshape.inputTarget[0].paintTargetWeights
         
         # Iterate over every vertices...
         itVerts = om.MItMeshVertex(shape_dag)
         while not itVerts.isDone():
-            element_plug = weights_plug.elementByLogicalIndex(itVerts.index()) # MPlug
+            child_plug = paint_plug.elementByLogicalIndex(itVerts.index()) # MPlug
+            # result: blendShape.inputTarget[0].baseWeights[99]
+            
+            if child_plug.isLocked:
+                om.MGlobal.displayError("{0} plug is locked. Aborting set weights function.".format(child_plug)) 
+                return # might cause error when the loop is in process
+            elif child_plug.isConnected:
+                om.MGlobal.displayError("{0} plug is connected. Aborting set weights function.".format(child_plug))
+                return
+
             try:
                 weight = self.source_weights[itVerts.index()] # float
             except:
                 weight = 0.0 # if source verts < target verts: index out of range... Set default value to 0.
             
             if self.undoable:
-                vert = '{0}.vtx[{1}]'.format(shape_fullPath, itVerts.index())
-                pass
+                attr = child_plug.name()
+                cmds.setAttr(attr, weight)
             elif not self.undoable:
-                element_plug.setFloat(weight) # float
+                child_plug.setFloat(weight) # float
             
             itVerts.next()
         
-        # update display (color feedback)
-        mel.eval('artAttrBlendShapeValues artAttrBlendShapeContext;')
+        # update display (color feedback)...
+        mel.eval("artAttrBlendShapeValues artAttrBlendShapeContext;")
         
         om.MGlobal.displayInfo("Paste blendshape weights success!")
     

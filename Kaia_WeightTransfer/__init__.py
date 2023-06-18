@@ -39,7 +39,7 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         ###
         self.undoable = True
         self.source_shape = None
-        self.source_weight = None
+        self.source_weights = None
         self.current_shape = None
         self.current_tool = None
         self.current_paint = None
@@ -89,7 +89,7 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         elif tool == 'artAttrContext':
             self.queryDeformerWeights()
         
-        if tool and self.source_shape and self.source_weight:
+        if tool and self.source_shape and self.source_weights:
             self.paste_btn.setEnabled(True)
         
         
@@ -105,7 +105,7 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         if tool == 'artAttrSkinContext':
             self.editSkinWeights(shape, deformer, paint)
         elif tool == 'artAttrBlendShapeContext':
-            self.editBlendWeights()
+            self.editBlendWeights(shape, deformer, paint)
         elif tool == 'artAttrNClothContext':
             self.editNClothWeights()
         elif tool == 'artAttrContext':

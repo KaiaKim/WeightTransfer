@@ -45,25 +45,46 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         self.current_paint = None
         
     def create_widgets(self):
+        self.discription_1 = QtWidgets.QLabel("Transfer single weight across \nskinCluster, blendShape, nCloth, deformers.\n\nSelect an influence inside any Paint Tool.\n")
+        
         self.undoable_cb = QtWidgets.QCheckBox("Undoable")
         self.undoable_cb.setChecked(True)
+        
         self.copy_btn = QtWidgets.QPushButton("Copy")
         self.paste_btn = QtWidgets.QPushButton("Paste")
         self.paste_btn.setEnabled(False)
+        
+        self.replace_rb = QtWidgets.QRadioButton("Replace")
+        self.add_rb = QtWidgets.QRadioButton("Add")
+        self.scale_rb = QtWidgets.QRadioButton("Scale")
+        self.replace_rb.setChecked(True)
 
     
     def create_layouts(self):
+        
+        disc_layout = QtWidgets.QHBoxLayout()
+        disc_layout.addWidget(self.discription_1)
+        
         option_layout = QtWidgets.QHBoxLayout()
-        option_layout.addStretch()
-        option_layout.addWidget(self.undoable_cb)
+        option_layout.addWidget(self.replace_rb)
+        option_layout.addWidget(self.add_rb)
+        option_layout.addWidget(self.scale_rb)
+        
+        undoable_layout = QtWidgets.QHBoxLayout()
+        undoable_layout.addStretch()
+        undoable_layout.addWidget(self.undoable_cb)
+        
         
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addStretch()
         button_layout.addWidget(self.copy_btn)
         button_layout.addWidget(self.paste_btn)
         
+        
         main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.addLayout(disc_layout)
         main_layout.addLayout(option_layout)
+        main_layout.addLayout(undoable_layout)
         main_layout.addLayout(button_layout)
         
     def create_connections(self):
@@ -98,6 +119,13 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
             shape, deformer, tool, paint = self.initialCheck()
         except:
             return
+        
+        if self.replace_rb.isChecked():
+            pass
+        elif self.add_rb.isChecked():
+            pass
+        elif self.scale_rb.isChecked():
+            pass
         
         original_sel = om.MGlobal.getActiveSelectionList()
         cmds.undoInfo(openChunk=True)

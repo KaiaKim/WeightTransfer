@@ -81,7 +81,7 @@ class WeightTransferCompute():
         
 
     def querySkinWeights(self, shape_dag, skinclst, inf):
-
+        # Get objects & function sets...
         skinclst_obj = om.MSelectionList().add(skinclst).getDependNode(0) # Mobject
         skinclst_fn = oma.MFnSkinCluster(skinclst_obj)
         
@@ -120,11 +120,16 @@ class WeightTransferCompute():
         # Iterate over every vertices...
         itVerts = om.MItMeshVertex(shape_dag)
         while not itVerts.isDone():
-            child_plug = paint_plug.elementByLogicalIndex(itVerts.index()) # MPlug
+            i = itVerts.index()
+            child_plug = paint_plug.elementByLogicalIndex(i) # MPlug
+            
+            ###QUERY WEIGHTS
             weight = child_plug.asFloat() # float
             self.source_weights.append(weight)
-            itVerts.next()
             
+            itVerts.next()
+        
+        # Set source shape...
         self.source_shape = shape_dag
         
         om.MGlobal.displayInfo("Copy blendshape weights success!")
@@ -148,44 +153,52 @@ class WeightTransferCompute():
     
     
     def editSkinWeights(self, shape_dag, skinclst, inf):
-        shape_fullPath = shape_dag.fullPathName() # str
+        # Get names & objects & function sets...
+        shape_name = shape_dag.fullPathName() # str
         
         skinclst_obj = om.MSelectionList().add(skinclst).getDependNode(0) # Mobject
         skinclst_fn = oma.MFnSkinCluster(skinclst_obj)
         
         inf_dag = om.MSelectionList().add(inf).getDagPath(0) # dag
         inf_idx = skinclst_fn.indexForInfluenceObject(inf_dag) # int
-        inf_dagArray = skinclst_fn.influenceObjects() # MDagPathArray
         
         # Check for lock/unlock state for the influences.
-        locked_ls = []
-        for num, i in enumerate(inf_dagArray):
+        all_inf = skinclst_fn.influenceObjects() # MDagPathArray
+        unlock_count = 0
+        for num, i in enumerate(all_inf):
             if i == inf_dag:
                 continue # skip the target influence. Doesn't matter.
             locked = cmds.getAttr(skinclst+'.lockWeights[{0}]'.format(num))
-            if locked == False:
-                locked_ls.append(locked)
-                
-        if locked_ls == [False]:
-            pass
-        elif locked_ls == []:
+            if not locked:
+                unlock_count += 1
+        
+        # Display Warning if the unlock count is not 1 (except target inf)...
+        if unlock_count == 0:
             om.MGlobal.displayWarning("None of influences is unlocked. Weights can't be normalized due to locked influences.")
-        else:
+        elif unlock_count > 1:
             om.MGlobal.displayWarning("Multiple influences are unlocked. Weights might leak into unwanted influences.")
         
         # Iterate over every vertices...
         itVerts = om.MItMeshVertex(shape_dag)
-        while not itVerts.isDone():    
+        while not itVerts.isDone():
+            i = itVerts.index()
             vert_obj = itVerts.currentItem() #MObject
             try:
-                weight = self.source_weights[itVerts.index()] # float
+                weight = self.source_weights[i] # float
             except:
-                weight = 0.0 # if source verts < target verts: index out of range... Set default value to 0.
+                weight = 0.0 # if source verts < target verts: index out of range. Set default value to 0.
+            
+            # Calculate add, scale, replace operation...
+            old_weight = skinclst_fn.getWeights(shape_dag, vert_obj, inf_idx)[0] # MDoublearray > float
+            if self.add_rb.isChecked():
+                weight += old_weight
+            elif self.scale_rb.isChecked():
+                weight *= old_weight
             
             ###EDIT WEIGHTS
             # Those two method basically does the same thing. OpenMaya API is faster, but is not undoable.
             if self.undoable:
-                vert = '{0}.vtx[{1}]'.format(shape_fullPath, itVerts.index())
+                vert = '{0}.vtx[{1}]'.format(shape_name, i)
                 cmds.skinPercent(skinclst, vert, tv=(inf, weight))
             elif not self.undoable:
                 skinclst_fn.setWeights(shape_dag, vert_obj, inf_idx, weight, normalize=True)
@@ -205,8 +218,7 @@ class WeightTransferCompute():
         # result: blendshape.inputTarget[0]
         if target == 1:
             paint_plug = inputTarget_plug.child(1) # MPlug
-            # result: blendshape.inputTarget[0].baseWeights
-            
+            # result: blendshape.inputTarget[0].baseWeights    
         elif target == 0:
             paint_plug = inputTarget_plug.child(3)
             # result: blendshape.inputTarget[0].paintTargetWeights
@@ -214,7 +226,8 @@ class WeightTransferCompute():
         # Iterate over every vertices...
         itVerts = om.MItMeshVertex(shape_dag)
         while not itVerts.isDone():
-            child_plug = paint_plug.elementByLogicalIndex(itVerts.index()) # MPlug
+            i = itVerts.index()
+            child_plug = paint_plug.elementByLogicalIndex(i) # MPlug
             # result: blendShape.inputTarget[0].baseWeights[99]
             
             if child_plug.isLocked:
@@ -225,15 +238,23 @@ class WeightTransferCompute():
                 return
 
             try:
-                weight = self.source_weights[itVerts.index()] # float
+                weight = self.source_weights[i] # float
             except:
                 weight = 0.0 # if source verts < target verts: index out of range... Set default value to 0.
             
+            # Calculate add, scale, replace operation...
+            old_weight = child_plug.asFloat()
+            if self.add_rb.isChecked():
+                weight += old_weight
+            elif self.scale_rb.isChecked():
+                weight *= old_weight
+            
+            ###EDIT WEIGHTS
             if self.undoable:
                 attr = child_plug.name()
                 cmds.setAttr(attr, weight)
             elif not self.undoable:
-                child_plug.setFloat(weight) # float
+                child_plug.setFloat(weight)
             
             itVerts.next()
         

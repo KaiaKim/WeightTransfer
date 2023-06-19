@@ -101,14 +101,18 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         except:
             return
         
-        if tool == 'artAttrSkinContext':
+        original_sel = om.MGlobal.getActiveSelectionList()
+        
+        if tool == "artAttrSkin":
             self.querySkinWeights(shape, deformer, paint)
-        elif tool == 'artAttrBlendShapeContext':
+        elif tool == "artAttrBlendShape":
             self.queryBlendWeights(shape, deformer, paint)
-        elif tool == 'artAttrNClothContext':
+        elif tool == "artAttrNCloth":
             self.queryNClothWeights()
-        elif tool == 'artAttrContext':
+        elif tool == "artAttr":
             self.queryDeformerWeights()
+        
+        om.MGlobal.setActiveSelectionList(original_sel)
         
         if tool and self.source_shape and self.source_weights:
             self.paste_btn.setEnabled(True)
@@ -120,23 +124,16 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         except:
             return
         
-        if self.replace_rb.isChecked():
-            pass
-        elif self.add_rb.isChecked():
-            pass
-        elif self.scale_rb.isChecked():
-            pass
-        
         original_sel = om.MGlobal.getActiveSelectionList()
         cmds.undoInfo(openChunk=True)
         
-        if tool == 'artAttrSkinContext':
+        if tool == "artAttrSkin":
             self.editSkinWeights(shape, deformer, paint)
-        elif tool == 'artAttrBlendShapeContext':
+        elif tool == "artAttrBlendShape":
             self.editBlendWeights(shape, deformer, paint)
-        elif tool == 'artAttrNClothContext':
+        elif tool == "artAttrNCloth":
             self.editNClothWeights()
-        elif tool == 'artAttrContext':
+        elif tool == "artAttr":
             self.editDeformerWeights()
             
         cmds.undoInfo(closeChunk=True)

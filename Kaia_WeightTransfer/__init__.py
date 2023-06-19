@@ -1,6 +1,8 @@
 import sys
 import importlib
 
+import time
+
 import maya.api.OpenMaya as om
 import maya.OpenMayaUI as omui
 import maya.cmds as cmds
@@ -96,12 +98,13 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         self.undoable = checked
     
     def copy_clicked(self):
+        start = time.time()
+        original_sel = om.MGlobal.getActiveSelectionList()
+        
         try:
-            shape, deformer, tool, paint = self.initialCheck()
+            shape, deformer, tool, paint = self.initialCheck(original_sel, qCheck=True)
         except:
             return
-        
-        original_sel = om.MGlobal.getActiveSelectionList()
         
         if tool == "artAttrSkin":
             self.querySkinWeights(shape, deformer, paint)
@@ -113,18 +116,22 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
             self.queryDeformerWeights()
         
         om.MGlobal.setActiveSelectionList(original_sel)
-        
+
         if tool and self.source_shape and self.source_weights:
             self.paste_btn.setEnabled(True)
+            
+        print('time:', time.time()-start)
         
         
     def paste_clicked(self):
+        start = time.time()
+        original_sel = om.MGlobal.getActiveSelectionList()
+        
         try:
-            shape, deformer, tool, paint = self.initialCheck()
+            shape, deformer, tool, paint = self.initialCheck(original_sel, eCheck=True)
         except:
             return
         
-        original_sel = om.MGlobal.getActiveSelectionList()
         cmds.undoInfo(openChunk=True)
         
         if tool == "artAttrSkin":
@@ -137,7 +144,10 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
             self.editDeformerWeights()
             
         cmds.undoInfo(closeChunk=True)
+        
         om.MGlobal.setActiveSelectionList(original_sel)
+        print('time:', time.time()-start)
+        
 
         
 if __name__ == "__main__":

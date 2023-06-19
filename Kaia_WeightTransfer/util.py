@@ -9,48 +9,50 @@ class WeightTransferCompute():
     def __init__(self):
         pass
     
-    def initialCheck(self):
-        original_sel = om.MGlobal.getActiveSelectionList()
-        
-        # We"re doing the operation on one mesh.
-        if original_sel.length() != 1:
+    def initialCheck(self, sel, qCheck=False, eCheck=False):
+        # We're doing the operation on one mesh.
+        if sel.length() != 1:
             om.MGlobal.displayError("There must be only one selection.")
             
-        # We"re doing the operation on poligon shape node.
+        # We're doing the operation on poligon shape node.
         try:
-            current_shape = original_sel.getDagPath(0).extendToShape() # dag
+            current_shape = sel.getDagPath(0).extendToShape() # dag
         except:
             om.MGlobal.displayError("Selection must have a shape node directly parented under.")
             return
-            
+        
+        # Only poligon mesh! No Nurbs surface.
         if current_shape.apiType() != 296: 
             om.MGlobal.displayError("Selection must be a poligon mesh.")
             return
         
-        # Is the source mesh same to the current mesh?
-        if self.source_shape:   # if source shape is not None
+        # When pasting the weight, is the source mesh same to the current mesh?
+        if self.source_shape and eCheck:   # if source shape is not None
             if self.source_shape != current_shape:
                 om.MGlobal.displayWarning("The source mesh is not same to the target mesh. Users might get unexpected results.")
         
         # What tool are we using?
         context = cmds.currentCtx() # context is the instance of the tool class
         current_tool = cmds.contextInfo(context, q=True, c=True) # c is class type
-
+        
         if current_tool == "artAttrSkin": #Paint Skin Weights Tool
-            # maya 2024 supports multiple skinclst
+            # Get maya version...
             v = cmds.about(version=True) # str <- stupid
             v = int(v)
+            # Get skincluster node...
             if v < 2024:
                 skinclst = cmds.ls(cmds.listHistory(current_shape.fullPathName()), type="skinCluster")
             elif v >= 2024:
                 skinclst = cmds.textScrollList("skinClusterPaintList", q=True, si=True)[0] 
+                # maya 2024 supports multiple skinclst
             
-            # We need to get a "context" of influence index
+            # Get selected influences...
             selected_inf = mel.eval('string $selectedInfs[] = `treeView -q -si $gArtSkinInfluencesList`') # list
             if selected_inf == []:
                 om.MGlobal.displayError("An influence must be selected inside Paint Skin Weights Tool.")
                 return
             
+            ###
             current_deformer = skinclst
             current_paint = selected_inf 
             
@@ -66,6 +68,7 @@ class WeightTransferCompute():
             # result: base weight is 1, 0
             # result: target weight is 0, n
             
+            ###
             current_deformer = bsNode
             current_paint = idx1 
                 
@@ -80,36 +83,34 @@ class WeightTransferCompute():
         return current_shape, current_deformer, current_tool, current_paint
         
 
-    def querySkinWeights(self, shape_dag, skinclst, inf_ls):
+    def querySkinWeights(self, shape_dag, skinclst, infs):
         # Get objects & function sets...
         skinclst_obj = om.MSelectionList().add(skinclst).getDependNode(0) # Mobject
         skinclst_fn = oma.MFnSkinCluster(skinclst_obj)
         
-        inf_idx_ls = []
-        for inf in inf_ls:
-            inf_dag = om.MSelectionList().add(inf).getDagPath(0)
-            inf_idx = skinclst_fn.indexForInfluenceObject(inf_dag) # int
-            inf_idx_ls.append(inf_idx)
-        
-        
-        # Create empty array...
+        # Create an empty array...
         weights = om.MDoubleArray()
         
         # Iterate over every vertices...
         itVerts = om.MItMeshVertex(shape_dag)
         while not itVerts.isDone():
-            vert_obj = itVerts.currentItem() #MObject
+            vert_obj = itVerts.currentItem() # MObject
+            
             ###QUERY WEIGHTS
             weight = 0.0
-            for inf_idx in inf_idx_ls:
+            for inf in infs:
+                # Get an index for each influence...
+                inf_dag = om.MSelectionList().add(inf).getDagPath(0)
+                inf_idx = skinclst_fn.indexForInfluenceObject(inf_dag) # int
+                
                 x = skinclst_fn.getWeights(shape_dag, vert_obj, inf_idx)[0] # float
                 weight += x
                 
             weights.append(weight)
             
             itVerts.next()
-        
 
+        # Store queried data...
         self.source_weights = weights
         self.source_shape = shape_dag
         
@@ -134,7 +135,7 @@ class WeightTransferCompute():
             paint_plug = inputTarget_plug.child(3)
             # result: blendshape.inputTarget[0].paintTargetWeights
         
-        # Create empty array...
+        # Create an empty array...
         weights = om.MDoubleArray()
         
         # Iterate over every vertices...
@@ -149,13 +150,13 @@ class WeightTransferCompute():
             
             itVerts.next()
         
-        # Set source shape...
-        self.source_shape = shape_dag
-        self.source_weights = weights
-        
         # update display (color feedback)...
         mel.eval("artAttrBlendShapeValues artAttrBlendShapeContext;")
         
+        # Store queried data...
+        self.source_shape = shape_dag
+        self.source_weights = weights
+
         om.MGlobal.displayInfo("Copy blendshape weights success!")
         
         
@@ -176,25 +177,25 @@ class WeightTransferCompute():
         print("envelope_weights:", envelope_weights, type(envelope_weights))
     
     
-    def editSkinWeights(self, shape_dag, skinclst, inf_ls):
+    def editSkinWeights(self, shape_dag, skinclst, infs):
         # Get names & objects & function sets...
         shape_name = shape_dag.fullPathName() # str
-        
         skinclst_obj = om.MSelectionList().add(skinclst).getDependNode(0) # Mobject
         skinclst_fn = oma.MFnSkinCluster(skinclst_obj)
         
         # if there's one inf selection get the first(and only) element
         # if there's multiple inf selection, we have to query last selected influence...
-        
-        if len(inf_ls) == 1:
-            inf = inf_ls[0]
-        elif len(inf_ls) > 1:
-            # Same to cmds.artAttrSkinPaintCtx(cmds.currentCtx(), q=True, inf=True) but faster
+        if len(infs) == 1:
+            inf = infs[0]
+        elif len(infs) > 1:
             inf = mel.eval('string	$influence = $artSkinLastSelectedInfluence;')
+            # Same to cmds.artAttrSkinPaintCtx(cmds.currentCtx(), q=True, inf=True) but faster
+ 
+        # Get index for the influence...
         inf_dag = om.MSelectionList().add(inf).getDagPath(0) # dag
         inf_idx = skinclst_fn.indexForInfluenceObject(inf_dag) # int
         
-        # Check for lock/unlock state for the influences.
+        # Check for lock/unlock state for the influences...
         allInf_array = skinclst_fn.influenceObjects() # MDagPathArray
         unlock_count = 0
         for num, i in enumerate(allInf_array):
@@ -228,7 +229,7 @@ class WeightTransferCompute():
                 weight *= old_weight
             
             ###EDIT WEIGHTS
-            # Those two method basically does the same thing. OpenMaya API is faster, but is not undoable.
+            # Those two method does the same thing. API is faster, but is not undoable.
             if self.undoable:
                 vert = "{0}.vtx[{1}]".format(shape_name, i)
                 cmds.skinPercent(skinclst, vert, tv=(inf, weight))

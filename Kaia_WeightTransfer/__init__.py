@@ -14,6 +14,7 @@ from shiboken2 import wrapInstance
 from Kaia_WeightTransfer import util
 importlib.reload(util)
 ###--------------------------------CLASS--------------------------------------
+
 def maya_main_window():
     """Return the Maya main window widget as a Python object"""
     main_window_ptr = omui.MQtUtil.mainWindow()
@@ -28,7 +29,7 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         super().__init__(parent)
         
         self.setWindowTitle("Weight Transfer Tool")
-        self.setMinimumWidth(200)
+        self.setMinimumWidth(250)
         
         # Remove the ? from the dialog on Windows
         self.setWindowFlag(QtCore.Qt.WindowContextHelpButtonHint, False)
@@ -42,12 +43,10 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         self.undoable = True
         self.source_shape = None
         self.source_weights = None
-        self.current_shape = None
-        self.current_tool = None
-        self.current_paint = None
         
     def create_widgets(self):
-        self.discription_1 = QtWidgets.QLabel("Transfer single weight across \nskinCluster, blendShape, nCloth, deformers.\n\nSelect an influence inside any Paint Tool.\n")
+        self.discription = QtWidgets.QLabel("Transfer single weight across \nskinCluster, blendShape, nCloth, deformers.\n\nSelect an influence inside any Paint Tool.\n")
+        self.timer_lb = QtWidgets.QLabel("timer:")
         
         self.undoable_cb = QtWidgets.QCheckBox("Undoable")
         self.undoable_cb.setChecked(True)
@@ -65,7 +64,7 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
     def create_layouts(self):
         
         disc_layout = QtWidgets.QHBoxLayout()
-        disc_layout.addWidget(self.discription_1)
+        disc_layout.addWidget(self.discription)
         
         option_layout = QtWidgets.QHBoxLayout()
         option_layout.addWidget(self.replace_rb)
@@ -78,10 +77,11 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         
         
         button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addWidget(self.timer_lb)
         button_layout.addStretch()
         button_layout.addWidget(self.copy_btn)
         button_layout.addWidget(self.paste_btn)
-        
+
         
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.addLayout(disc_layout)
@@ -98,57 +98,80 @@ class WeightTransferDialog(QtWidgets.QDialog, util.WeightTransferCompute):
         self.undoable = checked
     
     def copy_clicked(self):
+        # start timer
         start = time.time()
-        original_sel = om.MGlobal.getActiveSelectionList()
-        
+        # get selection
+        sel = om.MGlobal.getActiveSelectionList()
+        # error check & get data
         try:
-            shape, deformer, tool, paint = self.initialCheck(original_sel, qCheck=True)
+            tool, shape, node_type, node_name, paint = self.initialCheck(sel, qCheck=True)
         except:
             return
         
         if tool == "artAttrSkin":
-            self.querySkinWeights(shape, deformer, paint)
+            self.querySkinWeights(shape, node_name, paint)
         elif tool == "artAttrBlendShape":
-            self.queryBlendWeights(shape, deformer, paint)
+            self.queryBlendWeights(shape, node_name, paint)
         elif tool == "artAttrNCloth":
             self.queryNClothWeights()
         elif tool == "artAttr":
-            self.queryDeformerWeights()
+            self.queryDeformerWeights(shape, node_name, node_type, paint)
+        # restore selection
+        om.MGlobal.setActiveSelectionList(sel)
         
-        om.MGlobal.setActiveSelectionList(original_sel)
-
+        # If successfully get the shape & weights, enable paste button
         if tool and self.source_shape and self.source_weights:
             self.paste_btn.setEnabled(True)
-            
-        print('time:', time.time()-start)
         
+        # print time(speed)
+        t = 'timer: {:.3f}s\n'.format(time.time()-start)
+        self.timer_lb.setText(t)
         
     def paste_clicked(self):
+        # start timer
         start = time.time()
-        original_sel = om.MGlobal.getActiveSelectionList()
-        
+        # get selection
+        sel = om.MGlobal.getActiveSelectionList()
+        # error check & get data
         try:
-            shape, deformer, tool, paint = self.initialCheck(original_sel, eCheck=True)
+            tool, shape, node_type, node_name, paint = self.initialCheck(sel, eCheck=True)
         except:
             return
         
         cmds.undoInfo(openChunk=True)
         
         if tool == "artAttrSkin":
-            self.editSkinWeights(shape, deformer, paint)
+            # if vert count is high(over 10000) paste Skin weights operation might take some time. Continue? [v]
+            shape_name = shape.fullPathName()
+            vCount = cmds.polyEvaluate(shape_name, v=True)
+            if vCount > 9999:
+                self.show_warning_dialog()
+                if self.ret == self.qm.No:
+                    cmds.undoInfo(closeChunk=True)
+                    return
+            self.editSkinWeights(shape, node_name, paint)
         elif tool == "artAttrBlendShape":
-            self.editBlendWeights(shape, deformer, paint)
+            self.editBlendWeights(shape, node_name, paint)
         elif tool == "artAttrNCloth":
             self.editNClothWeights()
         elif tool == "artAttr":
-            self.editDeformerWeights()
+            self.editDeformerWeights(shape, node_name, node_type, paint)
             
         cmds.undoInfo(closeChunk=True)
         
-        om.MGlobal.setActiveSelectionList(original_sel)
-        print('time:', time.time()-start)
-        
+        # restore selection
+        om.MGlobal.setActiveSelectionList(sel)
+        # print time(speed)
+        t = 'timer: {:.3f}s\n'.format(time.time()-start)
+        self.timer_lb.setText(t)
+    
+    def show_warning_dialog(self):
+        self.qm = QtWidgets.QMessageBox()
+        qm_title = "Performance Warning"
+        qm_text = "Pasting skin weight might take long time, because of normalization.\nContinue?"
+        self.ret = self.qm.warning(self, qm_title, qm_text, self.qm.Yes | self.qm.No)
 
+        
         
 if __name__ == "__main__":
     try:

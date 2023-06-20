@@ -13,6 +13,7 @@ class WeightTransferCompute():
         # We're doing the operation on one mesh.
         if sel.length() != 1:
             om.MGlobal.displayError("There must be only one selection.")
+            return
             
         # We're doing the operation on poligon shape node.
         try:
@@ -32,55 +33,32 @@ class WeightTransferCompute():
                 om.MGlobal.displayWarning("The source mesh is not same to the target mesh. Users might get unexpected results.")
         
         # What tool are we using?
-        context = cmds.currentCtx() # context is the instance of the tool class
-        current_tool = cmds.contextInfo(context, q=True, c=True) # c is class type
+        tool_ctx = cmds.currentCtx() # context is the instance of the tool class
+        current_tool = cmds.contextInfo(tool_ctx, q=True, c=True) # c is class type
         
-        if current_tool == "artAttrSkin": #Paint Skin Weights Tool
-            # Get maya version...
-            v = cmds.about(version=True) # str <- stupid
-            v = int(v)
-            # Get skincluster node...
-            if v < 2024:
-                skinclst = cmds.ls(cmds.listHistory(current_shape.fullPathName()), type="skinCluster")
-            elif v >= 2024:
-                skinclst = cmds.textScrollList("skinClusterPaintList", q=True, si=True)[0] 
-                # maya 2024 supports multiple skinclst
-            
-            # Get selected influences...
-            selected_inf = mel.eval('string $selectedInfs[] = `treeView -q -si $gArtSkinInfluencesList`') # list
-            if selected_inf == []:
-                om.MGlobal.displayError("An influence must be selected inside Paint Skin Weights Tool.")
-                return
-            
-            ###
-            current_deformer = skinclst
-            current_paint = selected_inf 
-            
-        elif current_tool == "artAttrBlendShape":
-            # There might be a smarter way to get blendshape node? Currently we"re querying it from the context
-            selected_attr = cmds.artAttrCtx(context, q=True, asl=True)
-            # result: blendShape.blendShape1.paintTargetWeights
-            bsNode = selected_attr.split(".")[1]
-            
-            # We just have to know if we"re painting base weight or not.
-            # paintTargetWeights plug(below) will figure out which target we are painting.
-            idx1, idx2 = mel.eval("artBlendShapeTargetIndex;") # int, int
-            # result: base weight is 1, 0
-            # result: target weight is 0, n
-            
-            ###
-            current_deformer = bsNode
-            current_paint = idx1 
-                
-        elif current_tool == "artAttrNCloth":
-            pass
-        elif current_tool == "artAttr":
-            pass
-        else:
+        tool_ls = ["artAttrSkin","artAttrBlendShape", "artAttrNCloth", "artAttr"]
+        if current_tool not in tool_ls:
             om.MGlobal.displayError("Current tool must be either Paint Skin Weights Tool, Paint Blend Shape Weights Tool, Paint nCloth Attributes Tool, or Paint Attributes Tool.")
             return
         
-        return current_shape, current_deformer, current_tool, current_paint
+        # What node & attribute are we painting?
+        # example: 'deltaMush.deltaMush1.weights'
+        attr_ctx = cmds.artAttrCtx(tool_ctx, q=True, asl=True)
+        if attr_ctx == '':
+            om.MGlobal.displayError("User must select an attribute to paint.")
+            return
+            
+        current_type, current_node, current_paint = attr_ctx.split(".")
+        
+        # If the user painting skin weights, we must know the specific joint name. Overriding current_paint.
+        # User might select multiple joints. 
+        if current_tool == "artAttrSkin": #Paint Skin Weights Tool
+            current_paint = mel.eval('string $selectedInfs[] = `treeView -q -si $gArtSkinInfluencesList`') # list
+            if current_paint == []:
+                om.MGlobal.displayError("An influence must be selected inside Paint Skin Weights Tool.")
+                return
+        
+        return current_tool, current_shape, current_type, current_node, current_paint
         
 
     def querySkinWeights(self, shape_dag, skinclst, infs):
@@ -88,7 +66,7 @@ class WeightTransferCompute():
         skinclst_obj = om.MSelectionList().add(skinclst).getDependNode(0) # Mobject
         skinclst_fn = oma.MFnSkinCluster(skinclst_obj)
         
-        # Create an empty array...
+         # Create an empty array...
         weights = om.MDoubleArray()
         
         # Iterate over every vertices...
@@ -117,7 +95,7 @@ class WeightTransferCompute():
         om.MGlobal.displayInfo("Copy skin weights success!")
         
         
-    def queryBlendWeights(self, shape_dag, blendShape, target):
+    def queryBlendWeights(self, shape_dag, blendShape, paint):
         # There is no dedicated function set for accessing blendshape deformer weights (not blendshape weights!)
         # Therefore we"re accessing those values using Mplug object.
         
@@ -128,10 +106,10 @@ class WeightTransferCompute():
         # Get the weight plug...
         inputTarget_plug = blendShape_fn.findPlug("inputTarget", True).elementByPhysicalIndex(0)
         # result: blendshape.inputTarget[0]
-        if target == 1:
+        if paint == 'baseWeights':
             paint_plug = inputTarget_plug.child(1)
             # result: blendshape.inputTarget[0].baseWeights
-        elif target == 0:
+        elif paint == 'paintTargetWeights':
             paint_plug = inputTarget_plug.child(3)
             # result: blendshape.inputTarget[0].paintTargetWeights
         
@@ -211,6 +189,8 @@ class WeightTransferCompute():
         elif unlock_count > 1:
             om.MGlobal.displayWarning("Multiple influences are unlocked. Weights might leak into unwanted influences.")
         
+        cmds.scriptEditorInfo(suppressWarnings = True)
+
         # Iterate over every vertices...
         itVerts = om.MItMeshVertex(shape_dag)
         while not itVerts.isDone():
@@ -227,21 +207,26 @@ class WeightTransferCompute():
                 weight += old_weight
             elif self.scale_rb.isChecked():
                 weight *= old_weight
+                
+            if weight > 1:
+                weight = 1.0
             
             ###EDIT WEIGHTS
             # Those two method does the same thing. API is faster, but is not undoable.
             if self.undoable:
                 vert = "{0}.vtx[{1}]".format(shape_name, i)
-                cmds.skinPercent(skinclst, vert, tv=(inf, weight))
+                cmds.skinPercent(skinclst, vert, tv=(inf, weight), normalize=True)
+
             elif not self.undoable:
                 skinclst_fn.setWeights(shape_dag, vert_obj, inf_idx, weight, normalize=True)
-            
+
             itVerts.next()
             
+        cmds.scriptEditorInfo(suppressWarnings = False)
         om.MGlobal.displayInfo("Paste skin weight success!")
         
         
-    def editBlendWeights(self, shape_dag, blendShape, target):
+    def editBlendWeights(self, shape_dag, blendShape, paint):
         # Get blendshape node function set...
         blendShape_obj = om.MSelectionList().add(blendShape).getDependNode(0) # Mobject
         blendShape_fn = om.MFnDependencyNode(blendShape_obj)
@@ -249,10 +234,10 @@ class WeightTransferCompute():
         # Get the weight plug...
         inputTarget_plug = blendShape_fn.findPlug("inputTarget", True).elementByPhysicalIndex(0)
         # result: blendshape.inputTarget[0]
-        if target == 1:
-            paint_plug = inputTarget_plug.child(1) # MPlug
-            # result: blendshape.inputTarget[0].baseWeights    
-        elif target == 0:
+        if paint == 'baseWeights':
+            paint_plug = inputTarget_plug.child(1)
+            # result: blendshape.inputTarget[0].baseWeights
+        elif paint == 'paintTargetWeights':
             paint_plug = inputTarget_plug.child(3)
             # result: blendshape.inputTarget[0].paintTargetWeights
         

@@ -157,24 +157,45 @@ class WeightTransferUtil():
     
         
     def queryDeformerWeights(self, shape_dag, deformer_name, deformer_type, paint):
-        deformer_obj = om.MSelectionList().add(deformer_name).getDependNode(0) # Mobject
-        weightGeoFilter_fn = oma.MFnWeightGeometryFilter(deformer_obj)
+        # Get deformer node
+        deformer_obj = om.MSelectionList().add(deformer_name).getDependNode(0) # MObject
+        
+        if self.version >= 2024:
+            # maya 2024 has MFnWeightGeometryFilter
+            weightGeoFilter_fn = oma.MFnWeightGeometryFilter(deformer_obj)
 
+        elif self.version < 2024:
+            # maya 2022 doesn't have MFnWeightGeometryFilter
+            geoFilter_fn = oma.MFnGeometryFilter(deformer_obj)
+            # Get shape node
+            shape_obj = om.MSelectionList().add(shape_dag).getDependNode(0)
+            # Get plug index for connected shape
+            i = geoFilter_fn.indexForOutputShape(shape_obj)
+            # Get the weight plug...
+            weightList_plug = geoFilter_fn.findPlug("weightList", True).elementByPhysicalIndex(i)
+            weight_plug = weightList_plug.child(0)
+            
+                
         # Create an empty array...
         weights = om.MDoubleArray()
-        
         # Iterate over every vertices...
         itVerts = om.MItMeshVertex(shape_dag)
+        ###QUERY WEIGHTS
         while not itVerts.isDone():
-            vert_obj = itVerts.currentItem() # MObject
-        
-            weight = weightGeoFilter_fn.getWeights(shape_dag, vert_obj)[0] # float
-            # * path (MDagPath) - The path of the DAG object that has the components.
-            # * components (MObject) - The components whose weights are requested.
+            if self.version >= 2024:
+                vert_obj = itVerts.currentItem() # MObject
+                weight = weightGeoFilter_fn.getWeights(shape_dag, vert_obj)[0] # float
+                # * path (MDagPath) - The path of the DAG object that has the components.
+                # * components (MObject) - The components whose weights are requested.
+            elif self.version < 2024:
+                i = itVerts.index()
+                child_plug = weight_plug.elementByLogicalIndex(i) # MPlug
+                # result example: ffd2.weightList[i].weights[j]
+                weight = child_plug.asFloat() # float
+                
             weights.append(weight)
-            
             itVerts.next()
-            
+
         # Store queried data...
         self.source_shape = shape_dag
         self.source_weights = weights
@@ -374,6 +395,12 @@ class WeightTransferDialog(QtWidgets.QDialog, WeightTransferUtil):
     def __init__(self, parent=maya_main_window()):
         super().__init__(parent)
         
+        ###
+        self.version = int( cmds.about(version=True) )
+        self.undoable = True
+        self.source_shape = None
+        self.source_weights = None
+        
         self.setWindowTitle("Weight Transfer Tool")
         self.setMinimumWidth(250)
         
@@ -385,10 +412,7 @@ class WeightTransferDialog(QtWidgets.QDialog, WeightTransferUtil):
         self.create_layouts()
         self.create_connections()
         
-        ###
-        self.undoable = True
-        self.source_shape = None
-        self.source_weights = None
+        
         
     def create_widgets(self):
         t1 = "Transfer single weight across \nskinCluster, blendShape, nCloth, deformers."

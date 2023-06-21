@@ -6,6 +6,8 @@
 # How to use: Select an influence inside any Paint Tool. Hit copy or paste
 
 #-----------------------------------IMPORT--------------------------------------
+import sys
+
 import maya.api.OpenMaya as om
 import maya.api.OpenMayaAnim as oma
 import maya.OpenMayaUI as omui
@@ -71,7 +73,7 @@ class WeightTransferUtil():
                 return
         
         return current_tool, current_shape, current_type, current_node, current_paint
-        
+
 
     def querySkinWeights(self, shape_dag, skinclst, infs):
         # Get objects & function sets...
@@ -154,8 +156,8 @@ class WeightTransferUtil():
         pass
     
         
-    def queryDeformerWeights(self, shape_dag, deformer, deformer_type, paint):
-        deformer_obj = om.MSelectionList().add(deformer).getDependNode(0) # Mobject
+    def queryDeformerWeights(self, shape_dag, deformer_name, deformer_type, paint):
+        deformer_obj = om.MSelectionList().add(deformer_name).getDependNode(0) # Mobject
         weightGeoFilter_fn = oma.MFnWeightGeometryFilter(deformer_obj)
 
         # Create an empty array...
@@ -357,6 +359,16 @@ class WeightTransferUtil():
 
 
 #-------------------------------------UI CLASS-----------------------------------------
+def maya_main_window():
+    """Return the Maya main window widget as a Python object"""
+    main_window_ptr = omui.MQtUtil.mainWindow()
+    
+    if sys.version_info.major >= 3: # Python 3 or higher
+        return wrapInstance(int(main_window_ptr), QtWidgets.QWidget)
+    else:
+        return wrapInstance(long(main_window_ptr), QtWidgets.QWidget)
+
+
 
 class WeightTransferDialog(QtWidgets.QDialog, WeightTransferUtil):
     def __init__(self, parent=maya_main_window()):
@@ -510,14 +522,6 @@ class WeightTransferDialog(QtWidgets.QDialog, WeightTransferUtil):
         self.ret = self.qm.warning(self, qm_title, qm_text, self.qm.Yes | self.qm.No)
 
 
-def maya_main_window():
-    """Return the Maya main window widget as a Python object"""
-    main_window_ptr = omui.MQtUtil.mainWindow()
-    
-    if sys.version_info.major >= 3: # Python 3 or higher
-        return wrapInstance(int(main_window_ptr), QtWidgets.QWidget)
-    else:
-        return wrapInstance(long(main_window_ptr), QtWidgets.QWidget)
 
         
 if __name__ == "__main__":

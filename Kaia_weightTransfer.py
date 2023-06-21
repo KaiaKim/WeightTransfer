@@ -171,9 +171,12 @@ class WeightTransferUtil():
             shape_obj = om.MSelectionList().add(shape_dag).getDependNode(0)
             # Get plug index for connected shape
             i = geoFilter_fn.indexForOutputShape(shape_obj)
+            #print('shape index', i)
             # Get the weight plug...
             weightList_plug = geoFilter_fn.findPlug("weightList", True).elementByPhysicalIndex(i)
+            #print('weightList_plug', weightList_plug)
             weight_plug = weightList_plug.child(0)
+            #print('weight_plug', weight_plug)
             
                 
         # Create an empty array...
@@ -360,7 +363,6 @@ class WeightTransferUtil():
         # Iterate over every vertices...
         itVerts = om.MItMeshVertex(shape_dag)
         while not itVerts.isDone():
-            
             i = itVerts.index()
             vert_obj = itVerts.currentItem() # MObject
             
@@ -385,7 +387,7 @@ class WeightTransferUtil():
             if weight > 1:
                 weight = 1.0
                     
-             if self.version >= 2024:
+            if self.version >= 2024:
                 ###EDIT WEIGHTS
                 if self.undoable:
                     attr = str(plugs[i])

@@ -337,16 +337,30 @@ class WeightTransferUtil():
         pass
     
         
-    def editDeformerWeights(self, shape_dag, deformer, deformer_type, paint):
-        deformer_obj = om.MSelectionList().add(deformer).getDependNode(0) # Mobject
-        weightGeoFilter_fn = oma.MFnWeightGeometryFilter(deformer_obj)
+    def editDeformerWeights(self, shape_dag, deformer_name, deformer_type, paint):
+        deformer_obj = om.MSelectionList().add(deformer_name).getDependNode(0) # Mobject
         
-        sel = om.MSelectionList().add(shape_dag)
-        plugs = weightGeoFilter_fn.getWeightPlugStrings(sel)
+        if self.version >= 2024:
+            # maya 2024 has MFnWeightGeometryFilter
+            weightGeoFilter_fn = oma.MFnWeightGeometryFilter(deformer_obj)
+            sel = om.MSelectionList().add(shape_dag)
+            plugs = weightGeoFilter_fn.getWeightPlugStrings(sel)
+            
+        elif self.version < 2024:
+            # maya 2022 doesn't have MFnWeightGeometryFilter
+            geoFilter_fn = oma.MFnGeometryFilter(deformer_obj)
+            # Get shape node
+            shape_obj = om.MSelectionList().add(shape_dag).getDependNode(0)
+            # Get plug index for connected shape
+            i = geoFilter_fn.indexForOutputShape(shape_obj)
+            # Get the weight plug...
+            weightList_plug = geoFilter_fn.findPlug("weightList", True).elementByPhysicalIndex(i)
+            weight_plug = weightList_plug.child(0)
 
         # Iterate over every vertices...
         itVerts = om.MItMeshVertex(shape_dag)
         while not itVerts.isDone():
+            
             i = itVerts.index()
             vert_obj = itVerts.currentItem() # MObject
             
@@ -355,23 +369,32 @@ class WeightTransferUtil():
             except:
                 weight = 0.0 # if source verts < target verts: index out of range... Set default value to 0.
             
+            if self.version >= 2024:
+                old_weight = weightGeoFilter_fn.getWeights(shape_dag, vert_obj)[0] # float
+            elif self.version < 2024:
+                child_plug = weight_plug.elementByLogicalIndex(i) # MPlug
+                old_weight = child_plug.asFloat() # float
+                
             # Calculate add, scale, replace operation...
-            old_weight = weightGeoFilter_fn.getWeights(shape_dag, vert_obj)[0] # float
             if self.add_rb.isChecked():
                 weight += old_weight
             elif self.scale_rb.isChecked():
                 weight *= old_weight
-            
+                
             # Normalize weights
             if weight > 1:
                 weight = 1.0
+                    
+             if self.version >= 2024:
+                ###EDIT WEIGHTS
+                if self.undoable:
+                    attr = str(plugs[i])
+                    cmds.setAttr(attr, weight)
+                elif not self.undoable:
+                    weightGeoFilter_fn.setWeights(shape_dag, vert_obj, weight) # float
             
-            ###EDIT WEIGHTS
-            if self.undoable:
-                attr = str(plugs[i])
-                cmds.setAttr(attr, weight)
-            elif not self.undoable:
-                weightGeoFilter_fn.setWeights(shape_dag, vert_obj, weight) # float
+            elif self.version < 2024:
+                child_plug.setFloat(weight)
 
             itVerts.next()
 
